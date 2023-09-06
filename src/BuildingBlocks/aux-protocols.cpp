@@ -25,7 +25,26 @@ SOFTWARE.
 #include "BuildingBlocks/truncation.h"
 #include "BuildingBlocks/value-extension.h"
 
+// #include <mutex>
+// #include <chrono>
+
 using namespace sci;
+
+// std::mutex print_duration_mutex_local;
+
+// void print_duration_local(std::chrono::_V2::system_clock::time_point t1, string tag) {
+//     static auto t_acc = std::chrono::high_resolution_clock::duration::zero();
+//     print_duration_mutex_local.lock();
+//     auto t2 = std::chrono::high_resolution_clock::now();
+//     std::cout << "::" << tag << " took "
+//               << ((double)std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()) / 1000
+//               << " seconds\n";
+//     t_acc += (t2 - t1);
+//     std::cout << ":: all " << tag << " took "
+//               << ((double)std::chrono::duration_cast<std::chrono::milliseconds>(t_acc).count()) / 1000
+//               << " seconds\n";
+//     print_duration_mutex_local.unlock();
+// }
 
 AuxProtocols::AuxProtocols(int party, sci::NetIO *io,
                            OTPack<sci::NetIO> *otpack) {
@@ -86,6 +105,41 @@ void AuxProtocols::multiplexer(uint8_t *sel, uint64_t *x, uint64_t *y,
   for (int i = 0; i < size; i++) {
     y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i] - data_S[i]) & mask_y);
   }
+
+  delete[] corr_data;
+  delete[] data_S;
+  delete[] data_R;
+}
+
+void AuxProtocols::one_side_multiplexer(uint8_t *sel, uint64_t *x, uint64_t *y,
+                               int32_t size, int32_t bw_x, int32_t bw_y) {
+  assert(bw_x <= 64 && bw_y <= 64 && bw_y <= bw_x);
+  uint64_t mask_x = (bw_x == 64 ? -1 : ((1ULL << bw_x) - 1));
+  uint64_t mask_y = (bw_y == 64 ? -1 : ((1ULL << bw_y) - 1));
+
+  uint64_t *corr_data = new uint64_t[size];
+  uint64_t *data_S = new uint64_t[size];
+  uint64_t *data_R = new uint64_t[size];
+
+  // y = (sel_0 \xor 0) * (x_0 + x_1)
+  // y = [sel_0*x_0] + sel_0*x_1]
+  for (int i = 0; i < size; i++) {
+    corr_data[i] = x[i] & mask_y;
+  }
+
+	// auto t_tmp = std::chrono::high_resolution_clock::now();
+  if (party == sci::ALICE) {
+    otpack->iknp_reversed->recv_cot(data_R, (bool *)sel, size, bw_y);
+    for (int i = 0; i < size; i++) {
+      y[i] = ((x[i] * uint64_t(sel[i]) + data_R[i]) & mask_y);
+    }
+  } else {  // party == sci::BOB
+    otpack->iknp_reversed->send_cot(data_S, corr_data, size, bw_y);
+    for (int i = 0; i < size; i++) {
+      y[i] = ( - data_S[i]) & mask_y;
+    }
+  }
+  // print_duration_local(t_tmp, "duration send ot");
 
   delete[] corr_data;
   delete[] data_S;

@@ -15,6 +15,9 @@
 #include "utils/mitccrh.h"
 #include "utils/performance.h"
 
+// #include <mutex>
+// #include <chrono>
+
 namespace cheetah {
 
 template <typename IO>
@@ -22,6 +25,22 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
  public:
   FerretCOT<IO>* ferret;
   cheetah::MITCCRH<8> mitccrh;
+
+  // std::mutex print_duration_mutex_local;
+
+  // void print_duration_local(std::chrono::_V2::system_clock::time_point t1, string tag) {
+  //     static auto t_acc = std::chrono::high_resolution_clock::duration::zero();
+  //     print_duration_mutex_local.lock();
+  //     auto t2 = std::chrono::high_resolution_clock::now();
+  //     std::cout << "::" << tag << " took "
+  //               << ((double)std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()) / 1000
+  //               << " seconds\n";
+  //     t_acc += (t2 - t1);
+  //     std::cout << ":: all " << tag << " took "
+  //               << ((double)std::chrono::duration_cast<std::chrono::milliseconds>(t_acc).count()) / 1000
+  //               << " seconds\n";
+  //     print_duration_mutex_local.unlock();
+  // }
 
   SilentOT(int party, int threads, IO** ios, bool malicious = false,
            bool run_setup = true, std::string pre_file = "",
@@ -80,7 +99,10 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
     uint64_t modulo_mask = (1ULL << l) - 1;
     if (l == 64) modulo_mask = -1;
     block* rcm_data = new block[length];
+
+    // auto t_tmp = std::chrono::high_resolution_clock::now();
     send_ot_rcm_cc(rcm_data, length);
+    // print_duration_local(t_tmp, "duration send cot");
 
     block s;
     ferret->prg.random_block(&s, 1);
@@ -116,6 +138,8 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
                              l);
       ferret->io->send_data(y, sizeof(uint64_t) * (corrected_y_size));
     }
+
+    // print_duration_local(t_tmp, "duration send split cot");
 
     delete[] rcm_data;
   }
@@ -544,7 +568,7 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
 
   void send_batched_got(uint64_t* data, int num_ot, int l,
                         int msgs_per_ot = 1) {
-    printf("send_batched_got here msgs_per_ot = %d, num_ot = %d\n", msgs_per_ot, num_ot);
+    // printf("send_batched_got here msgs_per_ot = %d, num_ot = %d\n", msgs_per_ot, num_ot);
     uint64_t** data2 = new uint64_t*[num_ot];
     for (int i=0; i<num_ot; ++i) {
       data2[i] = &data[i*(2)]; // fix me
@@ -564,7 +588,7 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
     int num_msg_len = msg_len.size();
     int dim = num_ot / num_msg_len;
 
-    printf("send_batched_cot here msgs_per_ot = %d, num_msg_len = %d, dim = %d\n", msgs_per_ot, num_msg_len, dim);
+    // printf("send_batched_cot here msgs_per_ot = %d, num_msg_len = %d, dim = %d\n", msgs_per_ot, num_msg_len, dim);
 
     for (int i=0; i<num_msg_len; ++i) {
       // for (int j=0; j<dim; ++j) {

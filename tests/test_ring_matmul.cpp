@@ -33,7 +33,7 @@ sci::OTPack<sci::NetIO> *otpack;
 LinearOT *prod;
 
 int dim1 = 100;
-int dim2 = 1000; // 53;
+int dim2 = 100; // 53;
 int dim3 = 100;
 int bwA = 8;
 int bwB = 8;

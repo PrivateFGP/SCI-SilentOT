@@ -107,6 +107,9 @@ class MITCCRH {
       case 5:
         AES_opt_key_schedule<5>(keys, scheduled_key);
         break;
+      case 6:
+        AES_opt_key_schedule<6>(keys, scheduled_key);
+        break;
       case 7:
         AES_opt_key_schedule<7>(keys, scheduled_key);
         break;
@@ -141,6 +144,9 @@ class MITCCRH {
         break;
       case 5:
         ParaEncExp<5>(out, scheduled_key);
+        break;
+      case 6:
+        ParaEncExp<6>(out, scheduled_key);
         break;
       case 7:
         ParaEncExp<7>(out, scheduled_key);
@@ -179,6 +185,9 @@ class MITCCRH {
         break;
       case 5:
         ParaEnc<5, 1>(out, scheduled_key);
+        break;
+      case 6:
+        ParaEnc<6, 1>(out, scheduled_key);
         break;
       case 7:
         ParaEnc<7, 1>(out, scheduled_key);

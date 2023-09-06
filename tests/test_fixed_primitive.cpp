@@ -16,7 +16,7 @@ bool verbose = true;
 sci::NetIO *iopack = nullptr;
 sci::OTPack<sci::NetIO> *otpack = nullptr;
 FixOp *fix_op = nullptr;
-int sz = 1;
+int sz = 10;
 int party = 1;
 string address = "127.0.0.1";
 int port = 8000;
@@ -27,13 +27,14 @@ void test_op() {
   uint64_t *f_1 = new uint64_t[sz];
   uint64_t *f_2 = new uint64_t[sz];
   uint64_t *f = new uint64_t[sz];
+  double *actual = new double[sz];
   for (int i = 0; i < sz; i++) {
-    f_1[i] = ((i+1)) << 16;
-    f_2[i] = ((i+1)*(i+1)) << 16;
+    f_1[i] = (((uint64_t)i+1)) << 20;
+    f_2[i] = (((uint64_t)i+1)*(i+1)) << 20;
   }
   // fa = fix_op->input(party, sz, f_1, false, 64);
-  FixArray fa_1 = fix_op->input(sci::ALICE, sz, f_1, true, 32, 16);
-  FixArray fa_2 = fix_op->input(sci::BOB, sz, f_2, false, 32, 16);
+  FixArray fa_1 = fix_op->input(sci::ALICE, sz, f_1, true, 40, 16);
+  FixArray fa_2 = fix_op->input(sci::BOB, sz, f_2, false, 40, 16);
   switch (op) {
     // case Op::ADD:
     //     cout << "ADD" << endl;
@@ -52,9 +53,11 @@ void test_op() {
     case Op::DIV:
         cout << "DIV" << endl;
         for (int i = 0; i < sz; i++) {
-        f[i] = f_1[i] / f_2[i];
+          printf("%llu %llu\n", f_1[i], f_2[i]);
+          f[i] = f_1[i] / f_2[i];
+          actual[i] = (double)f_1[i] / f_2[i];
         }
-        fa = fix_op->div(fa_1, fa_2, 32, 16);
+        fa = fix_op->div(fa_1, fa_2, 40, 16);
         break;
     default:
         assert(false);
@@ -65,7 +68,7 @@ void test_op() {
     if (verbose) {
       FixArray fa_i = fa_pub.subset(i, i + 1);
       cout << i << "\t" << f_1[i] << "\t" << f_2[i] << "\t" << f[i] << "\t"
-           << f_[i] << "\t" << fa_i << endl;
+           << f_[i] << "\t" << actual[i] << "\t" << fa_i << endl;
     }
     // assert(f[i] == f_[i]);
   }
@@ -164,7 +167,7 @@ int main(int argc, char **argv) {
   // op = static_cast<Op>(int_op);
   cmp_op = static_cast<CmpOp>(int_cmp_op);
 
-  for (int i=0; i<1000; ++i) {
+  for (int i=0; i<1; ++i) {
 
     printf("-> %d\n", i);
 
@@ -178,8 +181,8 @@ int main(int argc, char **argv) {
     uint64_t comm_start = iopack->counter;
 
     // test_int_to_float();
-    // test_op();
-    test_cmp_op();
+    test_op();
+    // test_cmp_op();
 
     time_log("fixed-point");
 

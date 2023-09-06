@@ -30,6 +30,7 @@ class OTCO: public OT<OTCO<IO>> { public:
 	}
 
 	void send_impl(const block* data0, const block* data1, int64_t length) {
+		printf("send base OT\n");
 		BigInt a;
 		Point A, AaInv;
 		block res[2];

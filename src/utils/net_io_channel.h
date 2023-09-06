@@ -161,6 +161,7 @@ public:
       else
         fprintf(stderr, "error: net_send_data %d\n", res);
     }
+    fflush(stream);
     has_sent = true;
   }
 

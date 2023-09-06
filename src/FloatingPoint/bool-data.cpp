@@ -74,19 +74,33 @@ BoolArray BoolOp::output(int party_, const BoolArray& x) {
   int sz = x.size;
   int ret_party = (party_ == sci::PUBLIC || party_ == x.party ? sci::PUBLIC : x.party);
   BoolArray ret(ret_party, sz);
-#pragma omp parallel num_threads(2)
-  {
-    if (omp_get_thread_num() == 1 && party_ != sci::BOB) {
-      if (party == sci::ALICE) {
-        iopack->recv_data(ret.data, sz * sizeof(uint8_t));
-      } else { // party == sci::BOB
-        iopack->send_data(x.data, sz * sizeof(uint8_t));
-      }
-    } else if (omp_get_thread_num() == 0 && party_ != sci::ALICE) {
-      if (party == sci::ALICE) {
-        iopack->send_data(x.data, sz * sizeof(uint8_t));
-      } else { // party == sci::BOB
-        iopack->recv_data(ret.data, sz * sizeof(uint8_t));
+  // printf("x.party %d, party %d, party_ %d", x.party, party, party_);
+
+  if (party_ == sci::PUBLIC && x.party != sci::PUBLIC && x.party == party) {
+    // printf("HHHH\n");
+    if (party == sci::ALICE) {
+      iopack->send_data(x.data, sz * sizeof(uint8_t));
+      iopack->recv_data(ret.data, sz * sizeof(uint8_t));
+    } else {
+      iopack->recv_data(ret.data, sz * sizeof(uint8_t));
+      iopack->send_data(x.data, sz * sizeof(uint8_t));      
+    }
+
+  } else {
+  #pragma omp parallel num_threads(2)
+    {
+      if (omp_get_thread_num() == 1 && party_ != sci::BOB) {
+        if (party == sci::ALICE) {
+          iopack->recv_data(ret.data, sz * sizeof(uint8_t));
+        } else { // party == sci::BOB
+          iopack->send_data(x.data, sz * sizeof(uint8_t));
+        }
+      } else if (omp_get_thread_num() == 0 && party_ != sci::ALICE) {
+        if (party == sci::ALICE) {
+          iopack->send_data(x.data, sz * sizeof(uint8_t));
+        } else { // party == sci::BOB
+          iopack->recv_data(ret.data, sz * sizeof(uint8_t));
+        }
       }
     }
   }

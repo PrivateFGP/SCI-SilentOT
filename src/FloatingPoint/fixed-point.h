@@ -128,6 +128,8 @@ std::ostream &operator<<(std::ostream &os, FixArray &other);
 
 FixArray concat(const vector<FixArray>& x);
 
+vector<FixArray> deConcat(const FixArray& x, int32_t dim1, int32_t dim2);
+
 class FixOp {
 public:
   int party;
@@ -196,6 +198,8 @@ public:
   //// x[i] = x (with same signedness, bitlength and scale as y)
   FixArray if_else(const BoolArray &cond, uint64_t x, const FixArray &y);
 
+  FixArray one_side_if_else(const BoolArray &cond, const FixArray &x, const FixArray &y);
+
   // Add Operations: return x[i] + y[i]
   // The output has same signedness, bitlength and scale as x, y
   //// Both x and y can be PUBLIC or secret-shared
@@ -258,6 +262,9 @@ public:
   inline FixArray mul(const FixArray &x, uint64_t y, uint8_t *msb_x = nullptr) {
       return mul(x, y, x.ell, msb_x);
   }
+
+  std::vector<FixArray> mul(const std::vector<FixArray> &x, const std::vector<FixArray> &y, int ell,
+          uint8_t *msb_x = nullptr, uint8_t *msb_y = nullptr);
 
   // Left Shift: returns x[i] << s[i] (in ell bits)
   // Output bitlength is ell, output signedness and scale are same as that of x
@@ -395,6 +402,18 @@ public:
   // nm and dn must be secret-shared, and s_out should be <= dn.s
   // if normalized_dn is true, it is assumed that dn \in [1,2)
   FixArray div(const FixArray& nm, const FixArray& dn, int l_out, int s_out, bool normalized_dn = false);
+
+  // Finds max element in x[i], forall i
+  FixArray max(const std::vector<FixArray>& x);
+
+  std::pair<FixArray, FixArray> max_with_index(const std::vector<FixArray>& x, const std::vector<FixArray>& index);
+
+  // Exponentiation: returns y = e^{-x} in an l_y-bit fixed-point representation with scale s_y
+  // x must be secret-shared and signed, and l_y should be >= s_y + 2
+  // digit_size is an optional parameter that should be <= 8. This parameter affects both efficiency and precision (the larger the better)
+  FixArray exp(const FixArray& x, int l_y, int s_y, int digit_size = 8);
+
+  FixArray sigmoid(const FixArray& x, int l_y, int s_y);
 
 };
 
