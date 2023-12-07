@@ -342,6 +342,35 @@ FixArray FixOp::mul(const FixArray &x, const FixArray &y, int ell,
   return ret;
 }
 
+FixArray FixOp::one_side_mul(const FixArray &x, const FixArray &y, int ell, bool is_x_oneside, bool is_y_oneside,
+        uint8_t *msb_x, uint8_t *msb_y) {
+  assert(x.party != sci::PUBLIC || y.party != sci::PUBLIC);
+  assert(x.size == y.size);
+  assert(x.signed_ || (x.signed_ == y.signed_));
+  assert(ell >= x.ell && ell >= y.ell && ell <= x.ell + y.ell);
+  FixArray ret(this->party, x.size, x.signed_, ell, x.s + y.s);
+  if (x.party == sci::PUBLIC || y.party == sci::PUBLIC) {
+    FixArray x_ext = this->extend(x, ell, msb_x);
+    FixArray y_ext = this->extend(y, ell, msb_y);
+    uint64_t ret_mask = ret.ell_mask();
+    for (int i = 0; i < x.size; i++) {
+      ret.data[i] = (x_ext.data[i] * y_ext.data[i]) & ret_mask;
+    }
+  } else {
+    if (is_x_oneside) {
+      mult->hadamard_product(x.size, x.data, y.data, ret.data, x.ell, y.ell, ell,
+                            x.signed_, y.signed_, MultMode::Alice_has_A, msb_x, msb_y);
+    } else if (is_y_oneside) {
+      mult->hadamard_product(x.size, x.data, y.data, ret.data, x.ell, y.ell, ell,
+                            x.signed_, y.signed_, MultMode::Alice_has_B, msb_x, msb_y);      
+    } else {
+      mult->hadamard_product(x.size, x.data, y.data, ret.data, x.ell, y.ell, ell,
+                            x.signed_, y.signed_, MultMode::None, msb_x, msb_y);
+    }
+  }
+  return ret;              
+}
+
 FixArray FixOp::mul(const FixArray &x, uint64_t y, int ell, uint8_t *msb_x) {
   assert(ell >= x.ell);
   FixArray ret;
@@ -1221,3 +1250,136 @@ FixArray FixOp::sigmoid(const FixArray& x, int l_y, int s_y) {
   return ret;
 }
 
+FixArray FixOp::relu(const FixArray& x) {
+  BoolArray isPositive = fix->GT(x, 0);
+  FixArray ret = fix->if_else(isPositive, x, 0);
+  return ret;
+}
+
+BoolArray FixOp::drelu(const FixArray& x) {
+  BoolArray isPositive = fix->GT(x, 0);
+  // FixArray one = this->input(sci::ALICE, x.size, (uint64_t)(1<<x.s), x.signed_, x.ell, x.s);
+  // FixArray zero = this->input(sci::ALICE, x.size, (uint64_t)0, x.signed_, x.ell, x.s);
+  // FixArray ret = fix->if_else(isPositive, one, zero);
+  // printf("drelu x\n");
+  // fix->print(x);
+  // printf("drelu ret\n");
+  // fix->print(ret);
+  return isPositive;
+}
+
+std::vector<FixArray> FixOp::relu(const std::vector<FixArray>& x) {
+  assert(x.size() >= 1);
+  int32_t dim1 = x.size();
+  int32_t dim2 = x[0].size;
+  FixArray x_flat = concat(x);
+  BoolArray isPositive = fix->GT(x_flat, 0);
+  FixArray ret_flat = fix->if_else(isPositive, x_flat, 0);
+  std::vector<FixArray> ret = deConcat(ret_flat, dim1, dim2);
+  return ret;
+}
+
+std::vector<FixArray> FixOp::drelu(const std::vector<FixArray>& x) {
+  assert(x.size() >= 1);
+  int32_t dim1 = x.size();
+  int32_t dim2 = x[0].size;
+  FixArray x_flat = concat(x);
+  BoolArray isPositive = fix->GT(x_flat, 0);
+  FixArray one = this->input(sci::ALICE, x_flat.size, (uint64_t)(1<<x_flat.s), x_flat.signed_, x_flat.ell, x_flat.s);
+  FixArray zero = this->input(sci::ALICE, x_flat.size, (uint64_t)0, x_flat.signed_, x_flat.ell, x_flat.s);
+  FixArray ret_flat = fix->if_else(isPositive, one, zero);
+  std::vector<FixArray> ret = deConcat(ret_flat, dim1, dim2);
+  return ret;
+}
+
+std::vector<FixArray> FixOp::softmax(const std::vector<FixArray>& x, int l_y, int s_y) {
+  assert(x.size() >= 1);
+  int32_t dim1 = x.size();
+  int32_t dim2 = x[0].size;
+  FixArray x_flat = concat(x);
+  FixArray x_max = fix->max(x);
+
+  // printf("-----> x_flat\n");
+  // print(x_flat);
+
+  // printf("-----> x_max\n");
+  // print(x_max);
+
+  FixArray x_max_flat = FixArray(x_max.party, dim1*dim2, x_max.signed_, x_max.ell, x_max.s);
+  for (int i = 0; i < dim1; ++i) {
+    for (int j = 0; j < dim2; ++j) x_max_flat.data[i*dim2 + j] = x_max.data[i];
+  }
+  // Shift
+  x_flat = fix->sub(x_flat, x_max_flat);
+
+  // printf("-----> x_flat shifted\n");
+  // print(x_flat);
+
+  FixArray e_x_flat = fix->exp(x_flat, 64, s_y);
+  e_x_flat = fix->reduce(e_x_flat, l_y);
+
+  // std::vector<FixArray> duplicated_e_x_flat;
+  // for (int i=0; i<dim2; ++i) {
+  //   FixArray tmp(e_x_flat.party, dim1*dim2, false, e_x_flat.ell, e_x_flat.s);
+  //   for (int j=0; j<dim1; ++j) {
+  //     int32_t offset = j*dim2+i;
+  //     for (int k=0; k<dim2; ++k) {
+  //       tmp.data[j*dim2+k] = e_x_flat.data[offset];
+  //     }
+  //   }
+  //   duplicated_e_x_flat.push_back(tmp);
+  // }
+  // for (int i=1; i<dim2; ++i) {
+  //   duplicated_e_x_flat[0] = fix->add(duplicated_e_x_flat[0], duplicated_e_x_flat[i]);
+  // }
+
+  FixArray one = fix->input(sci::ALICE, dim1, (uint64_t)(1<<e_x_flat.s), true, e_x_flat.ell, e_x_flat.s);
+
+  FixArray sum_e_x(e_x_flat.party, dim1, false, e_x_flat.ell, e_x_flat.s);
+  uint64_t ell_mask_ = sum_e_x.ell_mask();
+  for (int i=0; i<dim1; ++i) {
+    sum_e_x.data[i] = 0;
+    for (int j=0; j<dim2; ++j) {
+      sum_e_x.data[i] += e_x_flat.data[i*dim2 + j];
+      sum_e_x.data[i] &= ell_mask_;
+    }
+  } 
+  FixArray reci = fix->div(one, sum_e_x, l_y, s_y);
+  // reci = fix->reduce(reci, l_y);
+  FixArray duplicated_reci(reci.party, dim1*dim2, true, reci.ell, reci.s);
+  for (int i=0; i<dim1; ++i) {
+    for (int j=0; j<dim2; ++j) {
+      duplicated_reci.data[i*dim2 + j] = reci.data[i];
+    }
+  } 
+
+  FixArray ret_flat = fix->mul(e_x_flat, duplicated_reci, l_y + s_y);
+  ret_flat = fix->truncate_reduce(ret_flat, s_y);
+
+  // // print_fix(duplicated_e_x[0]);
+  // printf("-----> e_x_flat\n");
+  // print(e_x_flat);
+  // printf("-----> duplicated_e_x_flat\n");
+  // print(duplicated_e_x_flat[0]);
+
+  // FixArray ret_flat = fix->div(e_x_flat, duplicated_e_x_flat[0], l_y, s_y);
+
+  // printf("-----> ret_flat\n");
+  // print(ret_flat);
+
+  std::vector<FixArray> ret = deConcat(ret_flat, dim1, dim2);
+  return ret;
+}
+
+void FixOp::print(const FixArray& vec) {
+  auto tmp_pub = output(sci::PUBLIC, vec);
+  std::vector<double> dbl = tmp_pub.get_native_type<double>();
+  for (int i = 0; i < dbl.size(); ++i) std::cout << dbl[i] << " ";
+  std::cout << std::endl;
+}
+
+void FixOp::print(const std::vector<FixArray>& x, size_t lines) {
+  for (size_t i = 0; i < x.size() && i < lines; ++i) {
+    print(x[i]);
+  }
+}

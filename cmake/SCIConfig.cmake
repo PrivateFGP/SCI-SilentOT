@@ -34,8 +34,8 @@ find_dependency(GMP REQUIRED)
 find_dependency(Threads REQUIRED)
 
 set_and_check(INSTALL_DIR "${PACKAGE_PREFIX_DIR}")
-#find_dependency(Eigen3 REQUIRED PATHS "/home/zzh/project/Artifact/MPC/SCI-SilentOT/build/../extern/eigen/build" NO_DEFAULT_PATH)
-#find_dependency(SEAL REQUIRED PATHS "/home/zzh/project/Artifact/MPC/SCI-SilentOT/build" NO_DEFAULT_PATH)
+#find_dependency(Eigen3 REQUIRED PATHS "/home/zzh/project/test-GCN/MPC/SCI-SilentOT/build/../extern/eigen/build" NO_DEFAULT_PATH)
+#find_dependency(SEAL REQUIRED PATHS "/home/zzh/project/test-GCN/MPC/SCI-SilentOT/build" NO_DEFAULT_PATH)
 find_dependency(OpenMP REQUIRED)
 
 # Add the targets file

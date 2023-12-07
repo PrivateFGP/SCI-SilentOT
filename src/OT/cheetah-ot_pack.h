@@ -6,12 +6,13 @@
 #include "OT/ferret/silent_ot.h"
 #include "OT/split-kkot.h"
 #include "utils/emp-tool.h"
+
 #define KKOT_TYPES 8
 
-#define PRE_OT_DATA_REG_SEND_FILE_ALICE "./data/pre_ot_data_reg_send_alice"
-#define PRE_OT_DATA_REG_SEND_FILE_BOB "./data/pre_ot_data_reg_send_bob"
-#define PRE_OT_DATA_REG_RECV_FILE_ALICE "./data/pre_ot_data_reg_recv_alice"
-#define PRE_OT_DATA_REG_RECV_FILE_BOB "./data/pre_ot_data_reg_recv_bob"
+#define PRE_OT_DATA_REG_SEND_FILE_ALICE "./ot-data/pre_ot_data_reg_send_alice"
+#define PRE_OT_DATA_REG_SEND_FILE_BOB "./ot-data/pre_ot_data_reg_send_bob"
+#define PRE_OT_DATA_REG_RECV_FILE_ALICE "./ot-data/pre_ot_data_reg_recv_alice"
+#define PRE_OT_DATA_REG_RECV_FILE_BOB "./ot-data/pre_ot_data_reg_recv_bob"
 
 namespace sci {
 
@@ -33,6 +34,9 @@ class OTPack {
   // bool do_setup = false;
 
   T *ios[1];
+  osuCrypto::Channel* chl;
+  osuCrypto::SilentOtExtReceiver* ot_recver;
+  osuCrypto::SilentOtExtSender* ot_sender;
 
   OTPack(T *io, int party, bool do_setup = true) {
     std::cout << "using silent ot pack" << std::endl;
@@ -44,12 +48,12 @@ class OTPack {
     ios[0] = io;
     silent_ot = new cheetah::SilentOT<T>(party, 1, ios, false, true,
                                          party == sci::ALICE
-                                             ? PRE_OT_DATA_REG_SEND_FILE_ALICE
-                                             : PRE_OT_DATA_REG_RECV_FILE_BOB);
+                                             ?  std::string(PRE_OT_DATA_REG_SEND_FILE_ALICE) + std::to_string(io->port)
+                                             : std::string(PRE_OT_DATA_REG_RECV_FILE_BOB) + std::to_string(io->port));
     silent_ot_reversed = new cheetah::SilentOT<T>(
         3 - party, 1, ios, false, true,
-        party == sci::ALICE ? PRE_OT_DATA_REG_RECV_FILE_ALICE
-                            : PRE_OT_DATA_REG_SEND_FILE_BOB);
+        party == sci::ALICE ? std::string(PRE_OT_DATA_REG_RECV_FILE_ALICE) + std::to_string(io->port)
+                            : std::string(PRE_OT_DATA_REG_SEND_FILE_BOB)  + std::to_string(io->port));
 
     for (int i = 0; i < KKOT_TYPES; i++) {
       kkot[i] = new cheetah::SilentOTN<T>(silent_ot, 1 << (i + 1));
@@ -63,6 +67,19 @@ class OTPack {
     delete silent_ot;
     for (int i = 0; i < KKOT_TYPES; i++) delete kkot[i];
     delete iknp_reversed;
+  }
+
+  void setUpSilentOT(
+    osuCrypto::Channel* chl_,
+    osuCrypto::SilentOtExtReceiver* ot_recver_,
+    osuCrypto::SilentOtExtSender* ot_sender_
+  ) {
+    chl = chl_;
+    ot_recver = ot_recver_;
+    ot_sender = ot_sender_;
+
+    silent_ot->setUpSilentOT(chl_, ot_recver_, ot_sender_); 
+    silent_ot_reversed->setUpSilentOT(chl_, ot_recver_, ot_sender_);   
   }
 
   void SetupBaseOTs() {}

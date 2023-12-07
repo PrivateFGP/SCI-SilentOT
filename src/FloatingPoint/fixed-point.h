@@ -247,6 +247,8 @@ public:
   //// msb_y is similar to msb_x but for y
   FixArray mul(const FixArray &x, const FixArray &y, int ell,
                uint8_t *msb_x = nullptr, uint8_t *msb_y = nullptr);
+  FixArray one_side_mul(const FixArray &x, const FixArray &y, int ell, bool is_x_oneside, bool is_y_oneside,
+               uint8_t *msb_x = nullptr, uint8_t *msb_y = nullptr);
   //// x can be PUBLIC or secret-shared
   //// y[i] = y (with same signedness as x; bitlength is ell and scale is 0)
   //// ell >= bitlength of x
@@ -414,6 +416,19 @@ public:
   FixArray exp(const FixArray& x, int l_y, int s_y, int digit_size = 8);
 
   FixArray sigmoid(const FixArray& x, int l_y, int s_y);
+
+  FixArray relu(const FixArray& x);
+
+  std::vector<FixArray> relu(const std::vector<FixArray>& x);
+
+  BoolArray drelu(const FixArray& x);
+
+  std::vector<FixArray> drelu(const std::vector<FixArray>& x);
+
+  std::vector<FixArray> softmax(const std::vector<FixArray>& x, int l_y, int s_y);
+
+  void print(const FixArray& x);
+  void print(const std::vector<FixArray>& x, size_t lines = 10);
 
 };
 

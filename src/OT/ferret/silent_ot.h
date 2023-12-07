@@ -15,16 +15,315 @@
 #include "utils/mitccrh.h"
 #include "utils/performance.h"
 
+#include "Common/Defines.h"
+#include "Network/IOService.h"
+
+#include "Network/Endpoint.h"
+#include "Network/Channel.h"
+
+#include <libOTe/TwoChooseOne/SilentOtExtReceiver.h>
+#include <libOTe/TwoChooseOne/SilentOtExtSender.h>
+
 // #include <mutex>
 // #include <chrono>
 
 namespace cheetah {
 
+#define NUM_OT_THRESHOLD 10000
+
 template <typename IO>
 class SilentOT : public sci::OT<SilentOT<IO>> {
+
+  void rand_silent_ot_send(
+      std::vector<std::array<osuCrypto::block, 2>>& sendMsg,
+      osuCrypto::SilentOtExtSender& sender, 
+      std::vector<oc::Channel>& chls
+  ) {
+    //std::cout << "\n Silent OT sender!! \n";
+
+    size_t num_threads = chls.size();
+    size_t total_len = sendMsg.size();
+    auto routine = [&](size_t tid)
+    {
+      size_t start_idx = total_len * tid / num_threads;
+      size_t end_idx = total_len * (tid + 1) / num_threads;
+      end_idx = ((end_idx <= total_len) ? end_idx : total_len);
+      size_t size = end_idx - start_idx;
+
+      osuCrypto::PRNG prng1(_mm_set_epi32(4253233465, 334565, 0, 235));
+      osuCrypto::u64 numOTs = size;
+
+      sender.configure(numOTs);
+      std::vector<std::array<osuCrypto::block, 2>> tmpMsg(size);
+      sender.silentSend(tmpMsg, prng1, chls[tid]);
+      std::copy_n(tmpMsg.begin(), size, sendMsg.begin() + start_idx);
+    };
+
+    std::vector<std::thread> thrds(num_threads);
+    for (size_t t = 0; t < num_threads; t++)
+      thrds[t] = std::thread(routine, t);
+    for (size_t t = 0; t < num_threads; t++)
+      thrds[t].join();
+  }
+
+  void silent_ot_send_given_choice_random_message(
+      std::vector<std::array<osuCrypto::block, 2>>& sendMsg,
+      osuCrypto::SilentOtExtSender& sender, 
+      std::vector<oc::Channel>& chls
+  ) {
+    size_t total_len = sendMsg.size();
+    osuCrypto::Channel& chl = chls[0];
+
+    std::vector<std::array<osuCrypto::block, 2>> tmp_messages(total_len);
+    osuCrypto::BitVector bit_correction(total_len);
+    rand_silent_ot_send(tmp_messages, sender, chls); // sample random ot blocks
+
+    chl.recv(bit_correction);
+    osuCrypto::block tmp;
+    for (int k = 0; k < tmp_messages.size(); k++)
+    {
+      if (bit_correction[k] == 1)
+      {
+        tmp = tmp_messages[k][0];
+        tmp_messages[k][0] = tmp_messages[k][1];
+        tmp_messages[k][1] = tmp;
+      }
+    }
+
+    sendMsg.swap(tmp_messages);
+  }
+
+  void silent_ot_send_given_choice_random_message(
+      std::vector<std::array<uint64_t, 2>>& sendMsg,
+      osuCrypto::SilentOtExtSender& sender, 
+      std::vector<oc::Channel>& chls
+  ) {
+    size_t total_len = sendMsg.size();
+    osuCrypto::Channel& chl = chls[0];
+
+    std::vector<std::array<osuCrypto::block, 2>> tmp_messages(total_len);
+    osuCrypto::BitVector bit_correction(total_len);
+    rand_silent_ot_send(tmp_messages, sender, chls); // sample random ot blocks
+
+    chl.recv(bit_correction);
+    osuCrypto::block tmp;
+    for (int k = 0; k < tmp_messages.size(); k++)
+    {
+      if (bit_correction[k] == 1)
+      {
+        tmp = tmp_messages[k][0];
+        tmp_messages[k][0] = tmp_messages[k][1];
+        tmp_messages[k][1] = tmp;
+      }
+    }
+
+    for (int i = 0; i < total_len; ++i) {
+      sendMsg[i][0] = tmp_messages[i][0].as<uint64_t>()[0];
+      sendMsg[i][1] = tmp_messages[i][1].as<uint64_t>()[0];
+    }
+  }
+
+  void silent_ot_send_given_choice_given_message(
+      const std::vector<std::array<osuCrypto::block, 2>>& sendMsg,
+      osuCrypto::SilentOtExtSender& sender, 
+      std::vector<oc::Channel>& chls
+  ) {
+    size_t total_len = sendMsg.size();
+    osuCrypto::Channel& chl = chls[0];
+
+    std::vector<std::array<osuCrypto::block, 2>> tmp_messages(total_len);
+    osuCrypto::BitVector bit_correction(total_len);
+    rand_silent_ot_send(tmp_messages, sender, chls); // sample random ot blocks
+
+    chl.recv(bit_correction);
+    osuCrypto::block tmp;
+    for (int k = 0; k < tmp_messages.size(); k++)
+    {
+      if (bit_correction[k] == 1)
+      {
+        tmp = tmp_messages[k][0];
+        tmp_messages[k][0] = tmp_messages[k][1];
+        tmp_messages[k][1] = tmp;
+      }
+      tmp_messages[k][0] = tmp_messages[k][0] ^ sendMsg[k][0];
+      tmp_messages[k][1] = tmp_messages[k][1] ^ sendMsg[k][1];
+    }
+
+    chl.send(tmp_messages);
+    // sendMsg.swap(tmp_messages);	
+  }
+
+  void silent_ot_send_given_choice_given_message(
+      const std::vector<std::array<uint64_t, 2>>& sendMsg,
+      osuCrypto::SilentOtExtSender& sender, 
+      std::vector<oc::Channel>& chls
+  ) {
+    size_t total_len = sendMsg.size();
+    osuCrypto::Channel& chl = chls[0];
+
+    std::vector<std::array<osuCrypto::block, 2>> tmp_messages(total_len);
+    osuCrypto::BitVector bit_correction(total_len);
+    rand_silent_ot_send(tmp_messages, sender, chls); // sample random ot blocks
+
+    chl.recv(bit_correction);
+
+    osuCrypto::block tmp;
+    for (int k = 0; k < total_len; k++)
+    {
+      if (bit_correction[k] == 1)
+      {
+        tmp = tmp_messages[k][0];
+        tmp_messages[k][0] = tmp_messages[k][1];
+        tmp_messages[k][1] = tmp;
+      }
+      tmp_messages[k][0] = tmp_messages[k][0] ^ osuCrypto::toBlock(0, sendMsg[k][0]);
+      tmp_messages[k][1] = tmp_messages[k][1] ^ osuCrypto::toBlock(0, sendMsg[k][1]);
+    }
+
+    chl.send(tmp_messages);
+  }
+
+
+  // Receive
+  void rand_silent_ot_recv(osuCrypto::BitVector& choices,
+      std::vector<osuCrypto::block>& recvMsg,
+      osuCrypto::SilentOtExtReceiver& recver,
+      std::vector<oc::Channel>& chls
+  ) {
+    //std::cout << "\n Silent OT receiver!!\n";
+    size_t num_threads = chls.size();
+    size_t total_len = choices.size();
+    std::vector<osuCrypto::BitVector> tmpChoices(num_threads);
+    auto routine = [&](size_t tid)
+    {
+      size_t start_idx = total_len * tid / num_threads;
+      size_t end_idx = total_len * (tid + 1) / num_threads;
+      end_idx = ((end_idx <= total_len) ? end_idx : total_len);
+      size_t size = end_idx - start_idx;
+
+      osuCrypto::PRNG prng0(_mm_set_epi32(4253465, 3434565, 234435, 23987045));
+      osuCrypto::u64 numOTs = size;
+
+      recver.configure(numOTs);
+
+      tmpChoices[tid].copy(choices, start_idx, size);
+      std::vector<oc::block> tmpMsg(size);
+      recver.silentReceive(tmpChoices[tid], tmpMsg, prng0, chls[tid]);
+
+      std::copy_n(tmpMsg.begin(), size, recvMsg.begin() + start_idx);
+    };
+    std::vector<std::thread> thrds(num_threads);
+    for (size_t t = 0; t < num_threads; t++)
+      thrds[t] = std::thread(routine, t);
+    for (size_t t = 0; t < num_threads; t++)
+      thrds[t].join();
+    choices.resize(0);
+    for (size_t t = 0; t < num_threads; t++)
+      choices.append(tmpChoices[t]);
+  }
+
+  void silent_ot_recv_given_choice_random_message(
+      osuCrypto::BitVector& choices,
+      std::vector<osuCrypto::block>& recvMsg,
+      osuCrypto::SilentOtExtReceiver& recver,
+      std::vector<oc::Channel>& chls
+  ) {
+    osuCrypto::Channel& chl = chls[0];
+    std::vector<osuCrypto::block> tmpMsg(choices.size());
+    osuCrypto::BitVector rand_choices(choices.size());
+
+    rand_silent_ot_recv(rand_choices, tmpMsg, recver, chls);
+
+    recvMsg.swap(tmpMsg);
+    osuCrypto::BitVector bit_correction = choices ^ rand_choices;
+    chl.send(bit_correction);
+  }
+
+  void silent_ot_recv_given_choice_random_message(
+      osuCrypto::BitVector& choices,
+      std::vector<uint64_t>& recvMsg,
+      osuCrypto::SilentOtExtReceiver& recver,
+      std::vector<oc::Channel>& chls
+  ) {
+    osuCrypto::Channel& chl = chls[0];
+    std::vector<osuCrypto::block> tmpMsg(choices.size());
+    osuCrypto::BitVector rand_choices(choices.size());
+
+    rand_silent_ot_recv(rand_choices, tmpMsg, recver, chls);
+
+    size_t total_length = choices.size();
+    recvMsg.resize(total_length);
+    for (int i = 0; i < total_length; ++i) recvMsg[i] = tmpMsg[i].as<uint64_t>()[0];
+    osuCrypto::BitVector bit_correction = choices ^ rand_choices;
+    chl.send(bit_correction);
+  }
+
+  void silent_ot_recv_given_choice_given_message(
+      osuCrypto::BitVector& choices,
+      std::vector<osuCrypto::block>& recvMsg,
+      osuCrypto::SilentOtExtReceiver& recver,
+      std::vector<oc::Channel>& chls
+  ) {
+    osuCrypto::Channel& chl = chls[0];
+    size_t num_ot = choices.size();
+    std::vector<osuCrypto::block> tmpMsg(num_ot);
+    osuCrypto::BitVector rand_choices(num_ot);
+
+    rand_silent_ot_recv(rand_choices, tmpMsg, recver, chls);
+
+    osuCrypto::BitVector bit_correction = choices ^ rand_choices;
+    chl.send(bit_correction);	
+
+    std::vector<std::array<osuCrypto::block, 2>> recvCorr(num_ot);
+    chl.recv(recvCorr);
+
+    for (int k = 0; k < num_ot; k++) {
+      if (choices[k] == 1) {
+        recvMsg[k] = tmpMsg[k] ^ recvCorr[k][1];
+      } else {
+        recvMsg[k] = tmpMsg[k] ^ recvCorr[k][0];
+      }
+    }	
+  }
+
+  void silent_ot_recv_given_choice_given_message(
+      const std::vector<uint8_t>& choices,
+      std::vector<uint64_t>& recvMsg,
+      osuCrypto::SilentOtExtReceiver& recver,
+      std::vector<oc::Channel>& chls
+  ) {
+    osuCrypto::Channel& chl = chls[0];
+    size_t num_ot = choices.size();
+    osuCrypto::BitVector bit_choices(num_ot);
+    for (int k = 0; k < num_ot; k++) bit_choices[k] = choices[k];
+
+    std::vector<osuCrypto::block> tmpMsg(num_ot);
+    osuCrypto::BitVector rand_choices(num_ot);
+
+    rand_silent_ot_recv(rand_choices, tmpMsg, recver, chls);
+
+    osuCrypto::BitVector bit_correction = bit_choices ^ rand_choices;
+    chl.send(bit_correction);	
+
+    std::vector<std::array<osuCrypto::block, 2>> recvCorr(num_ot);
+    chl.recv(recvCorr);
+
+    for (int k = 0; k < num_ot; k++) {
+      if (choices[k] == 1) {
+        recvMsg[k] = (tmpMsg[k].as<uint64_t>()[0]) ^ (recvCorr[k][1].as<uint64_t>()[0]);
+      } else {
+        recvMsg[k] = (tmpMsg[k].as<uint64_t>()[0]) ^ (recvCorr[k][0].as<uint64_t>()[0]);
+      }
+    }	
+  }
+
  public:
   FerretCOT<IO>* ferret;
   cheetah::MITCCRH<8> mitccrh;
+
+  osuCrypto::Channel* chl;
+  osuCrypto::SilentOtExtReceiver* ot_recver;
+  osuCrypto::SilentOtExtSender* ot_sender;
 
   // std::mutex print_duration_mutex_local;
 
@@ -50,9 +349,27 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
       block tmp;
       ferret->rcot(&tmp, 1);
     }
+
+    chl = nullptr;
+    ot_recver = nullptr;
+    ot_sender = nullptr;
   }
 
   ~SilentOT() { delete ferret; }
+  
+  void setUpSilentOT(
+    osuCrypto::Channel* chl_,
+    osuCrypto::SilentOtExtReceiver* ot_recver_,
+    osuCrypto::SilentOtExtSender* ot_sender_
+  ) {
+    chl = chl_;
+    ot_recver = ot_recver_;
+    ot_sender = ot_sender_;
+  }
+
+  bool isSilentOTSetup() {
+    return (chl != nullptr && ot_recver != nullptr && ot_sender != nullptr);
+  }
 
   void send_impl(const block* data0, const block* data1, int64_t length) {
     send_ot_cm_cc(data0, data1, length);
@@ -82,12 +399,62 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
     recv_ot_cm_cc(data, b, length, N, l);
   }
 
+  void libOTe_send_ot_cam_cc(uint64_t* data0, const uint64_t* corr, int64_t length, int l) {
+    std::vector<std::array<uint64_t, 2>> send_msg(length);
+    osuCrypto::PRNG prng(_mm_set_epi32(4253233465, 334565, 0, 235));
+    uint64_t modulo_mask = (1ULL << l) - 1;
+    if (l == 64) modulo_mask = -1;
+    for (int i = 0; i < length; ++i) {
+      send_msg[i][0] = prng.get<uint64_t>() & modulo_mask;
+      data0[i] = send_msg[i][0];
+      send_msg[i][1] = (send_msg[i][0] + corr[i]) & modulo_mask;
+    }
+    std::vector<osuCrypto::Channel> chls;
+    chls.push_back(*chl);
+    silent_ot_send_given_choice_given_message(
+        send_msg,
+        *ot_sender, 
+        chls
+    );    
+  }
+
+
+  void libOTe_recv_ot_cam_cc(uint64_t* data, const bool* b, int64_t length, int l) {
+    std::vector<uint8_t> choice(length);
+    for (int i = 0; i < length; ++i) {
+      if (b[i]) choice[i] = 1;
+      else choice[i] = 0;
+    }
+
+    std::vector<uint64_t> recv_msg(length);
+    std::vector<osuCrypto::Channel> chls;
+    chls.push_back(*chl);
+    silent_ot_recv_given_choice_given_message(
+      choice,
+      recv_msg,
+      *ot_recver,
+      chls
+    );
+    for (int i = 0; i < length; ++i) {
+      data[i] = recv_msg[i];
+    }    
+  }
+
   void send_cot(uint64_t* data0, const uint64_t* corr, int length, int l) {
-    send_ot_cam_cc(data0, corr, length, l);
+    if (length > NUM_OT_THRESHOLD && isSilentOTSetup()) {
+      libOTe_send_ot_cam_cc(data0, corr, length, l);
+    } else {
+      send_ot_cam_cc(data0, corr, length, l);
+    }
+    // send_ot_cam_cc(data0, corr, length, l);
   }
 
   void recv_cot(uint64_t* data, const bool* b, int length, int l) {
-    recv_ot_cam_cc(data, b, length, l);
+    if (length > NUM_OT_THRESHOLD && isSilentOTSetup()) {
+      libOTe_recv_ot_cam_cc(data, b, length, l);
+    } else {
+      recv_ot_cam_cc(data, b, length, l);
+    }
   }
 
   // chosen additive message, chosen choice
@@ -354,6 +721,21 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
     }
   }
 
+  void libOTe_send_ot_rm_cc(block* data0, block* data1, int64_t length) {
+    std::vector<std::array<osuCrypto::block, 2>> send_msg(length);
+    std::vector<osuCrypto::Channel> chls;
+    chls.push_back(*chl);
+    silent_ot_send_given_choice_random_message(
+        send_msg,
+        *ot_sender, 
+        chls
+    );
+    for (int i = 0; i < length; ++i) {
+      data0[i] = send_msg[i][0].mData;
+      data1[i] = send_msg[i][1].mData;
+    }   
+  }
+
   // random message, chosen choice
   void recv_ot_rm_cc(block* data, const bool* r, int64_t length) {
     recv_ot_rcm_cc(data, r, length);
@@ -367,6 +749,27 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
       ferret->mitccrh.template hash<ot_bsize, 1>(pad);
 	  std::memcpy(data + i, pad, std::min(ot_bsize, length - i) * sizeof(block));
     }
+  }
+
+  void libOTe_recv_ot_rm_cc(block* data, const bool* r, int64_t length) {
+    osuCrypto::BitVector bit_choices(length);
+    for (int i = 0; i < length; ++i) {
+      if (r[i]) bit_choices[i] = 1;
+      else bit_choices[i] = 0;
+    }
+
+    std::vector<osuCrypto::block> recv_msg(length);
+    std::vector<osuCrypto::Channel> chls;
+    chls.push_back(*chl);
+    silent_ot_recv_given_choice_random_message(
+      bit_choices,
+      recv_msg,
+      *ot_recver,
+      chls
+    );
+    for (int i = 0; i < length; ++i) {
+      data[i] = recv_msg[i].mData;
+    }   
   }
 
   // random message, random choice
@@ -453,7 +856,11 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
 
     block* rm_data0 = new block[length * logN];
     block* rm_data1 = new block[length * logN];
-    send_ot_rm_cc(rm_data0, rm_data1, length * logN);
+    if (length > NUM_OT_THRESHOLD && isSilentOTSetup()) {
+      libOTe_send_ot_rm_cc(rm_data0, rm_data1, length * logN);
+    } else {
+      send_ot_rm_cc(rm_data0, rm_data1, length * logN);
+    }    
 
     block pad[ot_bsize * N];
     uint32_t y_size =
@@ -473,8 +880,12 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
       }
     }
 
+    // printf("H1\n");
+
     for (int64_t i = 0; i < length; i += ot_bsize) {
-	  std::memset(pad, 0, sizeof(block) * N * ot_bsize);
+      // printf("Hi 0 %d\n", i);
+	    std::memset(pad, 0, sizeof(block) * N * ot_bsize);
+      // printf("Hi 1 %d\n", i);
       for (int64_t j = i; j < std::min(i + ot_bsize, length); ++j) {
         mitccrh.renew_ks(rm_data0 + j * logN, logN);
         mitccrh.hash_exp(hash_out, hash_in0, logN);
@@ -495,6 +906,8 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
         }
       }
 
+      // printf("Hi 2 %d\n", i);
+
       corrected_y_size = (uint32_t)ceil((std::min(ot_bsize, length - i) * N * l) /
                                         ((float)sizeof(T) * 8));
       corrected_bsize = std::min(ot_bsize, length - i);
@@ -503,6 +916,8 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
                                corrected_bsize, l, N);
 
       ferret->io->send_data(y, sizeof(T) * (corrected_y_size));
+
+      // printf("Hi 3 %d\n", i);
     }
 
     delete[] hash_in0;
@@ -526,7 +941,11 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
         b_choices[i * logN + j] = (bool)((r[i] & (1 << j)) >> j);
       }
     }
-    recv_ot_rm_cc(rm_data, b_choices, length * logN);
+    if (length > NUM_OT_THRESHOLD && isSilentOTSetup()) {
+      libOTe_recv_ot_rm_cc(rm_data, b_choices, length * logN);
+    } else {
+      recv_ot_rm_cc(rm_data, b_choices, length * logN);
+    }    
 
     block pad[ot_bsize];
 
@@ -568,18 +987,31 @@ class SilentOT : public sci::OT<SilentOT<IO>> {
 
   void send_batched_got(uint64_t* data, int num_ot, int l,
                         int msgs_per_ot = 1) {
-    // printf("send_batched_got here msgs_per_ot = %d, num_ot = %d\n", msgs_per_ot, num_ot);
+    printf("send_batched_got here msgs_per_ot = %d, num_ot = %d, l = %d\n", msgs_per_ot, num_ot, l);
     uint64_t** data2 = new uint64_t*[num_ot];
-    for (int i=0; i<num_ot; ++i) {
-      data2[i] = &data[i*(2)]; // fix me
+    if (msgs_per_ot == 1) {
+      for (int i=0; i<num_ot; ++i) {
+        data2[i] = &data[i*(2)]; // fix me
+      }
+      send_ot_cm_cc<uint64_t>(data2, num_ot, 2, l); // fix me
+    } else {
+      for (int i=0; i<num_ot; ++i) {
+        data2[i] = &data[i*msgs_per_ot]; // fix me
+      }
+      send_ot_cm_cc<uint64_t>(data2, num_ot, msgs_per_ot, l); // fix me
     }
-    send_ot_cm_cc<uint64_t>(data2, num_ot*msgs_per_ot, 2, l); // fix me
+
     delete data2;
   }
 
   void recv_batched_got(uint64_t* data, const uint8_t* r, int num_ot, int l,
                         int msgs_per_ot = 1) {
-    recv_ot_cm_cc<uint64_t>(data, r, num_ot*msgs_per_ot, 2, l); // fix me
+    // printf("recv_batched_got here msgs_per_ot = %d, num_ot = %d, l = %d\n", msgs_per_ot, num_ot, l);
+    if (msgs_per_ot == 1) {
+      recv_ot_cm_cc<uint64_t>(data, r, num_ot*msgs_per_ot, 2, l); // fix me
+    } else {
+      recv_ot_cm_cc<uint64_t>(data, r, num_ot, msgs_per_ot, l); // fix me
+    }
   }
 
   void send_batched_cot(uint64_t* data0, uint64_t* corr,

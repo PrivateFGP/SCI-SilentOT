@@ -25,11 +25,22 @@ include_directories(${EIGEN3_INCLUDE_DIR}
                     ${EMP-OT_INCLUDE_DIRS} 
                     ${EMP-TOOL_INCLUDE_DIRS})
 
+set(OS "unix")
+include_directories(/home/zzh/project/test-GCN/Art/lilibOTe/include)
+include_directories(/home/zzh/project/test-GCN/Art/libOTe/cryptoTools/thirdparty/${OS}/include/)
+include_directories(/home/zzh/project/test-GCN/Art/libOTe/cryptoTools/cryptoTools/)
+
+link_directories(/home/zzh/project/test-GCN/Art/lilibOTe/lib)
+link_directories(/home/zzh/project/test-GCN/Art/libOTe/cryptoTools/thirdparty/${OS}/lib/)
+
 ## cheetah-core
 add_library(gemini SHARED)
 include_directories(include)
 add_subdirectory(include)
 target_link_libraries(gemini SEAL::seal Eigen3::Eigen Threads::Threads)
+
+get_target_property(OUT gemini LINK_LIBRARIES)
+message(STATUS "link-dir" ${OUT})
 
 if (USE_APPROX_RESHARE)
   target_compile_definitions(gemini PUBLIC USE_APPROX_RESHARE=1)
